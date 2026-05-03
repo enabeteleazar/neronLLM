@@ -40,7 +40,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 app = FastAPI(
     title       = "neronOS_LLM",
     description = "Microservice IA — routing modèles, abstraction providers",
-    version     = "2.0.1",
+    version     = "2.1.0",
 )
 
 app.include_router(router)
