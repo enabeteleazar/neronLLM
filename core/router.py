@@ -19,8 +19,9 @@ MODEL_FALLBACK_CHAIN: list[str] = [
     "llama3.2:1b",
 ]
 
-# Provider fallback chain (unchanged from v1)
-PROVIDER_CHAIN: list[str] = ["ollama", "claude"]
+# Provider fallback chain — ordre de préférence pour le fallback provider.
+# llama_cpp est placé avant claude : local, pas de clé API, faible latence réseau.
+PROVIDER_CHAIN: list[str] = ["ollama", "llama_cpp", "claude"]
 
 # Built-in task → model defaults (overridable via neron.yaml → routing:)
 _DEFAULT_TASK_ROUTING: dict[str, str] = {
