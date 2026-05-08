@@ -40,7 +40,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 app = FastAPI(
     title       = "neronOS_LLM",
     description = "Microservice IA — routing modèles, abstraction providers",
-    version     = "2.1.0",
+    version     = "2.1.1",
 )
 
 app.include_router(router)
@@ -49,7 +49,7 @@ app.include_router(router)
 @app.on_event("startup")
 async def on_startup() -> None:
     logging.getLogger("llm").info(
-        json.dumps({"event": "llm_started", "version": "2.1.0", "port": 8765})
+        json.dumps({"event": "llm_started", "version": "2.1.1", "port": 8765})
     )
 
 
