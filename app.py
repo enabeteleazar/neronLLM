@@ -49,7 +49,7 @@ app.include_router(router)
 @app.on_event("startup")
 async def on_startup() -> None:
     logging.getLogger("llm").info(
-        json.dumps({"event": "llm_started", "version": "2.0.1", "port": 8765})
+        json.dumps({"event": "llm_started", "version": "2.1.0", "port": 8765})
     )
 
 
@@ -65,7 +65,7 @@ async def on_shutdown() -> None:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "llm.main:app",
+        "app:app",
         host    = "127.0.0.1",
         port    = 8765,
         workers = 1,

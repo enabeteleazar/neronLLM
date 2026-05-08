@@ -51,9 +51,10 @@ _reload_lock = asyncio.Lock()
 
 _API_KEY_HEADER = APIKeyHeader(name="X-Neron-API-Key", auto_error=False)
 from llm.config import load_config as _load_config
-_NERON_API_KEY = os.getenv("NERON_API_KEY") or _load_config().get("neron", {}).get("api_key", "")
+def _current_api_key() -> str:
+    return os.getenv("NERON_API_KEY") or _load_config().get("neron", {}).get("api_key", "")
 
-if not _NERON_API_KEY:
+if not _current_api_key():
     logger.warning(
         json.dumps({
             "event":   "auth_disabled",
@@ -72,9 +73,10 @@ async def _require_api_key(
     all requests pass through with a warning logged at startup.
     If set, the X-Neron-API-Key header must match exactly.
     """
-    if not _NERON_API_KEY:
+    current_key = _current_api_key()
+    if not current_key:
         return  # auth disabled — dev mode, warning already logged at import
-    if key != _NERON_API_KEY:
+    if key != current_key:
         raise HTTPException(status_code=403, detail="Invalid or missing API key")
 
 # ── Prometheus metrics (registered once) ──────────────────────────────────────
@@ -243,7 +245,7 @@ async def health() -> dict:
     return {
         "status":    "ok" if ollama_up else "degraded",
         "service":   "neron_llm",
-        "version":   "2.0.0",
+        "version":   "2.1.0",
         "providers": {
             "ollama": "up" if ollama_up else "down",
             "claude": "configured",
