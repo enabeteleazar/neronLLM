@@ -23,8 +23,8 @@ from typing import Any
 
 import httpx
 
-from config import get_llm_config
-from providers.base import BaseProvider
+from llm.config import get_llm_config
+from llm.providers.base import BaseProvider
 
 logger = logging.getLogger("neron_llm.llama_cpp")
 
