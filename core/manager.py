@@ -9,13 +9,13 @@ import logging
 import random
 import time
 
-from llm.core.router   import LLMRouter
-from llm.core.strategy import StrategyEngine
-from llm.core.types    import LLMRequest, LLMResponse
-from llm.providers.base      import BaseProvider
-from llm.providers.claude    import ClaudeProvider
-from llm.providers.llama_cpp import LlamaCppProvider
-from llm.providers.ollama    import OllamaProvider
+from core.router   import LLMRouter
+from core.strategy import StrategyEngine
+from core.types    import LLMRequest, LLMResponse
+from providers.base      import BaseProvider
+from providers.claude    import ClaudeProvider
+from providers.llama_cpp import LlamaCppProvider
+from providers.ollama    import OllamaProvider
 
 logger      = logging.getLogger("llm.manager")
 MAX_RETRIES      = 2

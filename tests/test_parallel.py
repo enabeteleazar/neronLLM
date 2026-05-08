@@ -13,19 +13,11 @@ import pytest
 from fastapi import HTTPException
 from unittest.mock import patch
 
-<<<<<<< Updated upstream
-from neron_llm.core.manager import LLMManager, MAX_RETRIES
-from neron_llm.core.router import LLMRouter
-from neron_llm.core.strategy import StrategyEngine
+from core.manager import LLMManager, MAX_RETRIES
+from core.router import LLMRouter
+from core.strategy import StrategyEngine
 from core.types import LLMRequest, LLMResponse
-from neron_llm.providers.base import BaseProvider
-=======
-from llm.core.manager import LLMManager, MAX_RETRIES
-from llm.core.router import LLMRouter
-from llm.core.strategy import StrategyEngine
-from llm.core.types import LLMRequest, LLMResponse
-from llm.providers.base import BaseProvider
->>>>>>> Stashed changes
+from providers.base import BaseProvider
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +267,7 @@ def test_retry_then_success():
 
     req = make_request(mode="single")
 
-    with patch("neron_llm.core.manager.asyncio.sleep") as mock_sleep:
+    with patch("core.manager.asyncio.sleep") as mock_sleep:
         mock_sleep.return_value = None  # instant
         result = asyncio.run(mgr.handle(req))
 
@@ -298,7 +290,7 @@ def test_retry_no_sleep_after_last_attempt():
     mgr = LLMManager()
     mgr.providers = {"ollama": FailingProvider()}
 
-    with patch("neron_llm.core.manager.asyncio.sleep") as mock_sleep:
+    with patch("core.manager.asyncio.sleep") as mock_sleep:
         mock_sleep.return_value = None
         asyncio.run(mgr._call_with_retry("ollama", "test message", "test-model"))
 
@@ -318,7 +310,7 @@ def test_all_providers_fail():
 
     req = make_request(mode="single", provider="ollama")
 
-    with patch("neron_llm.core.manager.asyncio.sleep"):
+    with patch("core.manager.asyncio.sleep"):
         result = asyncio.run(mgr.handle(req))
 
     assert result.error is not None
@@ -457,7 +449,7 @@ def test_auth_accepts_correct_key():
 def test_generate_request_rejects_empty_prompt():
     """Empty prompt must be rejected by Pydantic."""
     from pydantic import ValidationError
-    from llm.core.types import GenerateRequest
+    from core.types import GenerateRequest
 
     try:
         GenerateRequest(task_type="chat", prompt="")
@@ -471,7 +463,7 @@ def test_generate_request_rejects_empty_prompt():
 def test_generate_request_rejects_oversized_prompt():
     """Prompt exceeding PROMPT_MAX_LEN must be rejected."""
     from pydantic import ValidationError
-    from llm.core.types import GenerateRequest, PROMPT_MAX_LEN
+    from core.types import GenerateRequest, PROMPT_MAX_LEN
 
     try:
         GenerateRequest(task_type="chat", prompt="x" * (PROMPT_MAX_LEN + 1))
@@ -484,7 +476,7 @@ def test_generate_request_rejects_oversized_prompt():
 
 def test_generate_request_accepts_max_prompt():
     """Prompt exactly at the limit must be accepted."""
-    from llm.core.types import GenerateRequest, PROMPT_MAX_LEN
+    from core.types import GenerateRequest, PROMPT_MAX_LEN
 
     req = GenerateRequest(task_type="chat", prompt="x" * PROMPT_MAX_LEN)
     assert len(req.prompt) == PROMPT_MAX_LEN
@@ -495,7 +487,7 @@ def test_generate_request_accepts_max_prompt():
 def test_generate_request_rejects_oversized_context():
     """Context dict exceeding CONTEXT_MAX_KEYS must be rejected."""
     from pydantic import ValidationError
-    from llm.core.types import GenerateRequest, CONTEXT_MAX_KEYS
+    from core.types import GenerateRequest, CONTEXT_MAX_KEYS
 
     try:
         big_context = {str(i): "v" for i in range(CONTEXT_MAX_KEYS + 1)}
@@ -510,7 +502,7 @@ def test_generate_request_rejects_oversized_context():
 def test_llm_request_rejects_empty_message():
     """Legacy LLMRequest also validates message length."""
     from pydantic import ValidationError
-    from llm.core.types import LLMRequest
+    from core.types import LLMRequest
 
     try:
         LLMRequest(message="")
@@ -559,7 +551,7 @@ def test_reload_keeps_old_manager_on_failure():
 
     original_manager = routes_mod.manager
 
-    with patch("neron_llm.api.routes.LLMManager", side_effect=RuntimeError("bad config")):
+    with patch("api.routes.LLMManager", side_effect=RuntimeError("bad config")):
         from fastapi.testclient import TestClient
         from app import app
 

@@ -89,7 +89,6 @@ POST /llm/generate
 }
 
 GET  /llm/health
-GET  /llm/metrics
 POST /llm/reload    # recharge neron.yaml sans redémarrage
 ```
 
