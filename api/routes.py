@@ -2,9 +2,8 @@
 API routes for neron_llm — fully async.
 
 v2.0: POST /llm/generate added as the primary bus endpoint.
-      GET  /llm/metrics added.
       POST /llm/stream  added (SSE, future-ready).
-      All existing routes (/chat, /health, /reload) preserved.
+      Existing routes preserved: /health, /reload.
 
 Correlation ID (x-neron-request-id) is read from headers and forwarded
 to all log entries for end-to-end tracing.
@@ -23,10 +22,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Security
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
 from prometheus_client import (
-    CONTENT_TYPE_LATEST,
     Counter,
     Histogram,
-    generate_latest,
 )
 
 from core.manager import LLMManager
@@ -284,29 +281,3 @@ async def reload() -> dict:
         logger.warning(json.dumps({"event": "old_manager_close_error", "error": str(exc)}))
 
     return {"status": "ok", "message": "Configuration reloaded"}
-
-
-# ── GET /llm/metrics ─────────────────────────────────────────────────────────
-
-@router.get("/llm/metrics", dependencies=[Depends(_require_api_key)])
-async def metrics() -> StreamingResponse:
-    """Prometheus metrics endpoint."""
-    from fastapi.responses import Response
-    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
-
-
-# ── POST /chat — backward compat (kept from v1) ───────────────────────────────
-
-@router.post("/chat", response_model=LLMResponse, dependencies=[Depends(_require_api_key)])
-async def chat(request: LLMRequest) -> LLMResponse:
-    """Legacy endpoint — preserved for backward compat.  Prefer /llm/generate."""
-    logger.info(
-        json.dumps({
-            "event": "chat_request_legacy",
-            "task":  request.task,
-        })
-    )
-    result = await manager.handle(request)
-    if result.error and result.provider == "none":
-        raise HTTPException(status_code=502, detail=result.error)
-    return result
