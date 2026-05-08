@@ -26,8 +26,8 @@ from prometheus_client import (
     Histogram,
 )
 
-from core.manager import LLMManager
-from core.types   import (
+from llm.core.manager import LLMManager
+from llm.core.types   import (
     GenerateRequest,
     GenerateResponse,
     LLMRequest,
@@ -47,7 +47,7 @@ _reload_lock = asyncio.Lock()
 # ── Authentication ─────────────────────────────────────────────────────────────
 
 _API_KEY_HEADER = APIKeyHeader(name="X-Neron-API-Key", auto_error=False)
-from config import load_config as _load_config
+from llm.config import load_config as _load_config
 def _current_api_key() -> str:
     return os.getenv("NERON_API_KEY") or _load_config().get("neron", {}).get("api_key", "")
 
@@ -264,7 +264,7 @@ async def reload() -> dict:
     global manager
     async with _reload_lock:
         try:
-            from config import reload_config
+            from llm.config import reload_config
             reload_config()
             new_manager = LLMManager()       # raises if config is broken — old manager kept
             old_manager, manager = manager, new_manager

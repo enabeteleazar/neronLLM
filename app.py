@@ -8,7 +8,7 @@ import logging
 
 from fastapi import FastAPI
 
-from api.routes import router
+from llm.api.routes import router
 
 # ── Structured JSON logging ───────────────────────────────────────────────────
 
@@ -55,7 +55,7 @@ async def on_startup() -> None:
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
-    from api.routes import manager
+    from llm.api.routes import manager
     await manager.aclose()
     logging.getLogger("llm").info(
         json.dumps({"event": "llm_stopped"})
