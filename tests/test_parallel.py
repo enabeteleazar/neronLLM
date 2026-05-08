@@ -13,11 +13,11 @@ import pytest
 from fastapi import HTTPException
 from unittest.mock import patch
 
-from neron_llm.core.manager import LLMManager, MAX_RETRIES
-from neron_llm.core.router import LLMRouter
-from neron_llm.core.strategy import StrategyEngine
+from core.manager import LLMManager, MAX_RETRIES
+from core.router import LLMRouter
+from core.strategy import StrategyEngine
 from core.types import LLMRequest, LLMResponse
-from neron_llm.providers.base import BaseProvider
+from providers.base import BaseProvider
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +267,7 @@ def test_retry_then_success():
 
     req = make_request(mode="single")
 
-    with patch("neron_llm.core.manager.asyncio.sleep") as mock_sleep:
+    with patch("core.manager.asyncio.sleep") as mock_sleep:
         mock_sleep.return_value = None  # instant
         result = asyncio.run(mgr.handle(req))
 
@@ -290,7 +290,7 @@ def test_retry_no_sleep_after_last_attempt():
     mgr = LLMManager()
     mgr.providers = {"ollama": FailingProvider()}
 
-    with patch("neron_llm.core.manager.asyncio.sleep") as mock_sleep:
+    with patch("core.manager.asyncio.sleep") as mock_sleep:
         mock_sleep.return_value = None
         asyncio.run(mgr._call_with_retry("ollama", "test message", "test-model"))
 
@@ -310,7 +310,7 @@ def test_all_providers_fail():
 
     req = make_request(mode="single", provider="ollama")
 
-    with patch("neron_llm.core.manager.asyncio.sleep"):
+    with patch("core.manager.asyncio.sleep"):
         result = asyncio.run(mgr.handle(req))
 
     assert result.error is not None
@@ -551,7 +551,7 @@ def test_reload_keeps_old_manager_on_failure():
 
     original_manager = routes_mod.manager
 
-    with patch("neron_llm.api.routes.LLMManager", side_effect=RuntimeError("bad config")):
+    with patch("api.routes.LLMManager", side_effect=RuntimeError("bad config")):
         from fastapi.testclient import TestClient
         from app import app
 
