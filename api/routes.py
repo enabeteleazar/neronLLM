@@ -29,8 +29,8 @@ from prometheus_client import (
     generate_latest,
 )
 
-from llm.core.manager import LLMManager
-from llm.core.types   import (
+from core.manager import LLMManager
+from core.types   import (
     GenerateRequest,
     GenerateResponse,
     LLMRequest,
@@ -50,10 +50,11 @@ _reload_lock = asyncio.Lock()
 # ── Authentication ─────────────────────────────────────────────────────────────
 
 _API_KEY_HEADER = APIKeyHeader(name="X-Neron-API-Key", auto_error=False)
-from llm.config import load_config as _load_config
-_NERON_API_KEY = os.getenv("NERON_API_KEY") or _load_config().get("neron", {}).get("api_key", "")
+from config import load_config as _load_config
+def _current_api_key() -> str:
+    return os.getenv("NERON_API_KEY") or _load_config().get("neron", {}).get("api_key", "")
 
-if not _NERON_API_KEY:
+if not _current_api_key():
     logger.warning(
         json.dumps({
             "event":   "auth_disabled",
@@ -72,9 +73,10 @@ async def _require_api_key(
     all requests pass through with a warning logged at startup.
     If set, the X-Neron-API-Key header must match exactly.
     """
-    if not _NERON_API_KEY:
+    current_key = _current_api_key()
+    if not current_key:
         return  # auth disabled — dev mode, warning already logged at import
-    if key != _NERON_API_KEY:
+    if key != current_key:
         raise HTTPException(status_code=403, detail="Invalid or missing API key")
 
 # ── Prometheus metrics (registered once) ──────────────────────────────────────
@@ -243,7 +245,7 @@ async def health() -> dict:
     return {
         "status":    "ok" if ollama_up else "degraded",
         "service":   "neron_llm",
-        "version":   "2.0.0",
+        "version":   "2.1.0",
         "providers": {
             "ollama": "up" if ollama_up else "down",
             "claude": "configured",
@@ -265,7 +267,7 @@ async def reload() -> dict:
     global manager
     async with _reload_lock:
         try:
-            from llm.config import reload_config
+            from config import reload_config
             reload_config()
             new_manager = LLMManager()       # raises if config is broken — old manager kept
             old_manager, manager = manager, new_manager

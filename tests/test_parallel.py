@@ -16,7 +16,7 @@ from unittest.mock import patch
 from neron_llm.core.manager import LLMManager, MAX_RETRIES
 from neron_llm.core.router import LLMRouter
 from neron_llm.core.strategy import StrategyEngine
-from neron_llm.core.types import LLMRequest, LLMResponse
+from core.types import LLMRequest, LLMResponse
 from neron_llm.providers.base import BaseProvider
 
 
@@ -378,7 +378,7 @@ def test_auth_disabled_when_no_env_var():
         os.environ.pop("NERON_API_KEY", None)
 
         # Re-import routes with no key set
-        import neron_llm.api.routes as routes_mod
+        import api.routes as routes_mod
         importlib.reload(routes_mod)
 
         assert routes_mod._NERON_API_KEY == ""
@@ -396,7 +396,7 @@ def test_auth_rejects_missing_key():
     import os
 
     with patch.dict(os.environ, {"NERON_API_KEY": "secret-test-key"}):
-        import neron_llm.api.routes as routes_mod
+        import api.routes as routes_mod
         importlib.reload(routes_mod)
 
         try:
@@ -414,7 +414,7 @@ def test_auth_rejects_wrong_key():
     import os
 
     with patch.dict(os.environ, {"NERON_API_KEY": "secret-test-key"}):
-        import neron_llm.api.routes as routes_mod
+        import api.routes as routes_mod
         importlib.reload(routes_mod)
 
         try:
@@ -432,7 +432,7 @@ def test_auth_accepts_correct_key():
     import os
 
     with patch.dict(os.environ, {"NERON_API_KEY": "secret-test-key"}):
-        import neron_llm.api.routes as routes_mod
+        import api.routes as routes_mod
         importlib.reload(routes_mod)
 
         result = asyncio.run(routes_mod._require_api_key(key="secret-test-key"))
@@ -449,7 +449,7 @@ def test_auth_accepts_correct_key():
 def test_generate_request_rejects_empty_prompt():
     """Empty prompt must be rejected by Pydantic."""
     from pydantic import ValidationError
-    from neron_llm.core.types import GenerateRequest
+    from core.types import GenerateRequest
 
     try:
         GenerateRequest(task_type="chat", prompt="")
@@ -463,7 +463,7 @@ def test_generate_request_rejects_empty_prompt():
 def test_generate_request_rejects_oversized_prompt():
     """Prompt exceeding PROMPT_MAX_LEN must be rejected."""
     from pydantic import ValidationError
-    from neron_llm.core.types import GenerateRequest, PROMPT_MAX_LEN
+    from core.types import GenerateRequest, PROMPT_MAX_LEN
 
     try:
         GenerateRequest(task_type="chat", prompt="x" * (PROMPT_MAX_LEN + 1))
@@ -476,7 +476,7 @@ def test_generate_request_rejects_oversized_prompt():
 
 def test_generate_request_accepts_max_prompt():
     """Prompt exactly at the limit must be accepted."""
-    from neron_llm.core.types import GenerateRequest, PROMPT_MAX_LEN
+    from core.types import GenerateRequest, PROMPT_MAX_LEN
 
     req = GenerateRequest(task_type="chat", prompt="x" * PROMPT_MAX_LEN)
     assert len(req.prompt) == PROMPT_MAX_LEN
@@ -487,7 +487,7 @@ def test_generate_request_accepts_max_prompt():
 def test_generate_request_rejects_oversized_context():
     """Context dict exceeding CONTEXT_MAX_KEYS must be rejected."""
     from pydantic import ValidationError
-    from neron_llm.core.types import GenerateRequest, CONTEXT_MAX_KEYS
+    from core.types import GenerateRequest, CONTEXT_MAX_KEYS
 
     try:
         big_context = {str(i): "v" for i in range(CONTEXT_MAX_KEYS + 1)}
@@ -502,7 +502,7 @@ def test_generate_request_rejects_oversized_context():
 def test_llm_request_rejects_empty_message():
     """Legacy LLMRequest also validates message length."""
     from pydantic import ValidationError
-    from neron_llm.core.types import LLMRequest
+    from core.types import LLMRequest
 
     try:
         LLMRequest(message="")
@@ -523,14 +523,14 @@ def test_reload_closes_old_manager():
     import importlib
     from unittest.mock import AsyncMock, patch
 
-    import neron_llm.api.routes as routes_mod
+    import api.routes as routes_mod
     importlib.reload(routes_mod)
 
     old_manager = routes_mod.manager
     old_manager.aclose = AsyncMock()
 
     from fastapi.testclient import TestClient
-    from neron_llm.main import app
+    from app import app
 
     with TestClient(app) as client:
         resp = client.post("/llm/reload")
@@ -546,14 +546,14 @@ def test_reload_keeps_old_manager_on_failure():
     import importlib
     from unittest.mock import patch
 
-    import neron_llm.api.routes as routes_mod
+    import api.routes as routes_mod
     importlib.reload(routes_mod)
 
     original_manager = routes_mod.manager
 
     with patch("neron_llm.api.routes.LLMManager", side_effect=RuntimeError("bad config")):
         from fastapi.testclient import TestClient
-        from neron_llm.main import app
+        from app import app
 
         with TestClient(app) as client:
             resp = client.post("/llm/reload")
