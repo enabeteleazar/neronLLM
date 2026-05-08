@@ -1,9 +1,5 @@
-<<<<<<< HEAD
-# neron-llm - v2.0.0
-=======
-# neronOS_LLM - V2.0.0
+## neronOS_LLM - v2.1.0
 
->>>>>>> release/v2.0.0
 
 Microservice LLM unifié pour Néron. Abstrait les providers (Ollama, Claude) derrière une API FastAPI unique avec trois modes d'exécution.
 
@@ -66,7 +62,7 @@ strategy:
 
 ```bash
 pip install -r requirements.txt
-uvicorn llm.app:app --host 0.0.0.0 --port 8765
+uvicorn app:app --host 0.0.0.0 --port 8765
 ```
 
 Depuis `/etc/neron/` avec le venv activé. `PYTHONPATH=/etc/neron/llm` est défini dans le service systemd.

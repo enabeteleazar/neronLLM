@@ -8,7 +8,7 @@ import logging
 
 from fastapi import FastAPI
 
-from llm.api.routes import router
+from api.routes import router
 
 # ── Structured JSON logging ───────────────────────────────────────────────────
 
@@ -49,13 +49,13 @@ app.include_router(router)
 @app.on_event("startup")
 async def on_startup() -> None:
     logging.getLogger("llm").info(
-        json.dumps({"event": "llm_started", "version": "2.0.1", "port": 8765})
+        json.dumps({"event": "llm_started", "version": "2.1.0", "port": 8765})
     )
 
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
-    from llm.api.routes import manager
+    from api.routes import manager
     await manager.aclose()
     logging.getLogger("llm").info(
         json.dumps({"event": "llm_stopped"})
@@ -65,7 +65,7 @@ async def on_shutdown() -> None:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "llm.main:app",
+        "app:app",
         host    = "127.0.0.1",
         port    = 8765,
         workers = 1,
