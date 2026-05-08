@@ -15,8 +15,8 @@ import typer
 from rich.console import Console
 from rich.syntax import Syntax
 
-from core.manager import LLMManager
-from core.types import LLMRequest
+from llm.core.manager import LLMManager
+from llm.core.types import LLMRequest
 
 app = typer.Typer(name="neronctl", help="Interface CLI pour le service LLM de Neron")
 console = Console()

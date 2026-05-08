@@ -9,12 +9,13 @@ import logging
 import random
 import time
 
-from core.router   import LLMRouter
-from core.strategy import StrategyEngine
-from core.types    import LLMRequest, LLMResponse
-from providers.base   import BaseProvider
-from providers.claude import ClaudeProvider
-from providers.ollama import OllamaProvider
+from llm.core.router   import LLMRouter
+from llm.core.strategy import StrategyEngine
+from llm.core.types    import LLMRequest, LLMResponse
+from llm.providers.base      import BaseProvider
+from llm.providers.claude    import ClaudeProvider
+from llm.providers.llama_cpp import LlamaCppProvider
+from llm.providers.ollama    import OllamaProvider
 
 logger      = logging.getLogger("llm.manager")
 MAX_RETRIES      = 2
@@ -29,9 +30,12 @@ class LLMManager:
     def __init__(self) -> None:
         self.router   = LLMRouter()
         self.strategy = StrategyEngine()
+
+        llama_cpp = LlamaCppProvider()
         self.providers: dict[str, BaseProvider] = {
-            "ollama": OllamaProvider(),
-            "claude": ClaudeProvider(),
+            "ollama":    OllamaProvider(),
+            "llama_cpp": llama_cpp,
+            "claude":    ClaudeProvider(),
         }
 
     async def aclose(self) -> None:
