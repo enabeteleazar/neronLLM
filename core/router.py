@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 import logging
-from config import get_llm_config, get_routing_config
+from llm.config import get_llm_config, get_routing_config
 
 logger = logging.getLogger("neron_llm.router")
 
@@ -20,7 +20,7 @@ MODEL_FALLBACK_CHAIN: list[str] = [
 ]
 
 # Provider fallback chain (unchanged from v1)
-PROVIDER_CHAIN: list[str] = ["ollama", "claude"]
+PROVIDER_CHAIN: list[str] = ["ollama"]
 
 # Built-in task → model defaults (overridable via neron.yaml → routing:)
 _DEFAULT_TASK_ROUTING: dict[str, str] = {
