@@ -9,6 +9,7 @@ import logging
 from fastapi import FastAPI
 
 from llm.api.routes import router
+from llm.registry_client import RegistryClient
 
 # ── Structured JSON logging ───────────────────────────────────────────────────
 
@@ -48,6 +49,9 @@ app.include_router(router)
 
 @app.on_event("startup")
 async def on_startup() -> None:
+    registry_client = RegistryClient.from_env()
+    app.state.registry_client = registry_client
+    await registry_client.start()
     logging.getLogger("llm").info(
         json.dumps({"event": "llm_started", "version": "2.1.1", "port": 8765})
     )
@@ -56,6 +60,9 @@ async def on_startup() -> None:
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
     from llm.api.routes import manager
+    registry_client = getattr(app.state, "registry_client", None)
+    if registry_client is not None:
+        await registry_client.stop()
     await manager.aclose()
     logging.getLogger("llm").info(
         json.dumps({"event": "llm_stopped"})
