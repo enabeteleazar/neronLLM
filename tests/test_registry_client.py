@@ -9,25 +9,35 @@ import httpx
 import pytest
 
 from llm import app as llm_app
-from llm.registry_client import RegistryClient, RegistryClientConfig
+from server.common.registry.client import RegistryClient
+
+
+def _client(**kwargs):
+    defaults = {
+        "service_name": "llm",
+        "version": "0.1.0",
+        "host": "localhost",
+        "port": 8765,
+        "capabilities": ["text_generation", "chat", "completion"],
+        "metadata": {},
+    }
+    defaults.update(kwargs)
+    return RegistryClient(**defaults)
 
 
 @pytest.mark.asyncio
 async def test_register_uses_official_header_and_expected_payload():
-    captured: dict = {}
+    captured: list[tuple[httpx.Request, dict | None]] = []
 
     async def core(request: httpx.Request) -> httpx.Response:
-        captured["request"] = request
-        captured["payload"] = json.loads(request.content)
+        payload = json.loads(request.content) if request.content else None
+        captured.append((request, payload))
         return httpx.Response(200, json={"status": "healthy"})
 
-    client = RegistryClient(
-        RegistryClientConfig(
-            core_url="http://core.test",
-            api_key="secret",
-            service_host="llm.internal",
-            service_port=8765,
-        ),
+    client = _client(
+        core_url="http://core.test",
+        api_key="secret",
+        host="llm.internal",
         transport=httpx.MockTransport(core),
     )
     try:
@@ -35,10 +45,11 @@ async def test_register_uses_official_header_and_expected_payload():
     finally:
         await client.stop()
 
+    request, payload = captured[0]
     assert registered is True
-    assert captured["request"].headers["X-Neron-API-Key"] == "secret"
-    assert "X-API-Key" not in captured["request"].headers
-    assert captured["payload"] == {
+    assert request.headers["X-Neron-API-Key"] == "secret"
+    assert "X-API-Key" not in request.headers
+    assert payload == {
         "service_name": "llm",
         "host": "llm.internal",
         "port": 8765,
@@ -54,8 +65,8 @@ async def test_start_without_core_does_not_crash():
     async def unavailable(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("Core unavailable", request=request)
 
-    client = RegistryClient(
-        RegistryClientConfig(core_url="http://core.test"),
+    client = _client(
+        core_url="http://core.test",
         transport=httpx.MockTransport(unavailable),
     )
     try:
@@ -81,11 +92,9 @@ async def test_registration_retries_then_heartbeat_runs():
                 return httpx.Response(503, json={"detail": "Core starting"})
         return httpx.Response(200, json={"status": "healthy"})
 
-    client = RegistryClient(
-        RegistryClientConfig(
-            core_url="http://core.test",
-            heartbeat_interval=0.01,
-        ),
+    client = _client(
+        core_url="http://core.test",
+        heartbeat_interval=0.01,
         transport=httpx.MockTransport(core),
     )
     try:
@@ -98,7 +107,8 @@ async def test_registration_retries_then_heartbeat_runs():
     assert "/registry/heartbeat" in paths
 
 
-def test_environment_configuration():
+@pytest.mark.asyncio
+async def test_environment_configuration():
     env = {
         "NERON_CORE_URL": "http://core.internal:8010/",
         "NERON_API_KEY": "key",
@@ -106,12 +116,13 @@ def test_environment_configuration():
         "NERON_SERVICE_PORT": "9765",
     }
     with patch.dict(os.environ, env, clear=False):
-        config = RegistryClientConfig.from_env()
+        client = _client()
 
-    assert config.core_url == "http://core.internal:8010"
-    assert config.api_key == "key"
-    assert config.service_host == "llm.internal"
-    assert config.service_port == 9765
+    assert client.settings.core_url == "http://core.internal:8010"
+    assert client.settings.api_key == "key"
+    assert client.service.host == "llm.internal"
+    assert client.service.port == 9765
+    await client.stop()
 
 
 @pytest.mark.asyncio
@@ -120,11 +131,7 @@ async def test_llm_startup_starts_registry_client():
     fake_client.start = AsyncMock()
     fake_client.stop = AsyncMock()
 
-    with patch.object(
-        llm_app.RegistryClient,
-        "from_env",
-        return_value=fake_client,
-    ):
+    with patch.object(llm_app, "RegistryClient", return_value=fake_client):
         await llm_app.on_startup()
 
     fake_client.start.assert_awaited_once()

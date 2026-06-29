@@ -9,7 +9,7 @@ import logging
 from fastapi import FastAPI
 
 from llm.api.routes import router
-from llm.registry_client import RegistryClient
+from server.common.registry.client import RegistryClient
 
 # ── Structured JSON logging ───────────────────────────────────────────────────
 
@@ -49,7 +49,14 @@ app.include_router(router)
 
 @app.on_event("startup")
 async def on_startup() -> None:
-    registry_client = RegistryClient.from_env()
+    registry_client = RegistryClient(
+        service_name="llm",
+        version="0.1.0",
+        host="localhost",
+        port=8765,
+        capabilities=["text_generation", "chat", "completion"],
+        metadata={},
+    )
     app.state.registry_client = registry_client
     await registry_client.start()
     logging.getLogger("llm").info(
