@@ -38,7 +38,7 @@ tests/
 
 ```yaml
 neron:
-  api_key: <clé auth X-Neron-API-Key>   # auth activée si présente
+  api_key: <clé auth Authorization>   # auth activée si présente
 
 llm:
   model: llama3.2:1b
@@ -74,7 +74,7 @@ Clé lue depuis `neron.api_key` dans `neron.yaml`, avec fallback sur la variable
 ```bash
 curl -X POST http://localhost:8765/llm/generate \
   -H "Content-Type: application/json" \
-  -H "X-Neron-API-Key: <clé>" \
+  -H "Authorization: <clé>" \
   -d '{"prompt": "Dis bonjour", "task_type": "chat"}'
 ```
 

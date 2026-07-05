@@ -47,7 +47,7 @@ async def test_register_uses_official_header_and_expected_payload():
 
     request, payload = captured[0]
     assert registered is True
-    assert request.headers["X-Neron-API-Key"] == "secret"
+    assert request.headers["Authorization"] == "secret"
     assert "X-API-Key" not in request.headers
     assert payload == {
         "service_name": "llm",

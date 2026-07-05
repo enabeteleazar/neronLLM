@@ -46,7 +46,7 @@ _reload_lock = asyncio.Lock()
 
 # ── Authentication ─────────────────────────────────────────────────────────────
 
-_API_KEY_HEADER = APIKeyHeader(name="X-Neron-API-Key", auto_error=False)
+_API_KEY_HEADER = APIKeyHeader(name="Authorization", auto_error=False)
 from llm.config import load_config as _load_config
 def _current_api_key() -> str:
     return os.getenv("NERON_API_KEY") or _load_config().get("neron", {}).get("api_key", "")
@@ -68,7 +68,7 @@ async def _require_api_key(
 
     If NERON_API_KEY is not set (dev/local mode), auth is disabled and
     all requests pass through with a warning logged at startup.
-    If set, the X-Neron-API-Key header must match exactly.
+    If set, the Authorization header must match exactly.
     """
     current_key = _current_api_key()
     if not current_key:
