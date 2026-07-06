@@ -8,9 +8,11 @@ from pathlib import Path
 
 import yaml
 
+from common.paths import NERON_CONFIG
+
 logger = logging.getLogger("llm.config")
 
-CONFIG_PATH = Path("/etc/neron/neron.yaml")
+CONFIG_PATH = NERON_CONFIG
 
 # Keys that are NOT model mappings (e.g. timeout) — filtered out of routing
 _ROUTING_META_KEYS = {"timeout", "default_provider"}

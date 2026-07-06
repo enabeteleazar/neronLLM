@@ -10,9 +10,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from llm.api.routes import router
+from server.common.registry.client import RegistryClient
 
 VERSION = "2.1.2"
 PORT = 8765
+
 
 # ── Structured JSON logging ───────────────────────────────────────────────────
 
@@ -53,12 +55,26 @@ async def lifespan(app: FastAPI):
         "port": PORT,
     }))
 
+    registry_client = RegistryClient(
+        service_name="llm",
+        version=VERSION,
+        host="localhost",
+        port=PORT,
+        capabilities=["text_generation", "chat", "completion"],
+        metadata={},
+    )
+
+    app.state.registry_client = registry_client
+
     try:
+        await registry_client.start()
         yield
     finally:
         try:
-            from llm.api.routes import manager
+            if registry_client:
+                await registry_client.stop()
 
+            from llm.api.routes import manager
             if manager and hasattr(manager, "aclose"):
                 await manager.aclose()
 
