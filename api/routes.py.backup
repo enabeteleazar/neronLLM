@@ -75,7 +75,6 @@ async def _require_api_key(
         return  # auth disabled — dev mode, warning already logged at import
 
     if key is None:
-        logger.debug("API key missing in request")
         raise HTTPException(status_code=403, detail="Invalid or missing API key")
 
     # Accepte "Bearer <token>" (nouveau schéma) et le token brut (compat legacy)
@@ -83,7 +82,6 @@ async def _require_api_key(
     if key.lower().startswith("bearer "):
         token = key[7:].strip()
 
-    logger.debug("Token check: token_prefix=%s (len=%s), expected_prefix=%s (len=%s)", token[:4] if token else "", len(token) if token else 0, current_key[:4] if current_key else "", len(current_key) if current_key else 0)
     if token != current_key:
         raise HTTPException(status_code=403, detail="Invalid or missing API key")
 
