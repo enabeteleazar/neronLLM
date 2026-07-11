@@ -12,6 +12,13 @@ from llm.providers.base import BaseProvider
 logger = logging.getLogger("neron_llm.ollama")
 
 
+class ProviderBusyError(RuntimeError):
+    """Levée quand Ollama refuse la requête (HTTP 429) car son unique
+    créneau de génération est déjà occupé par une autre requête en cours.
+    Distinguée des autres erreurs pour permettre un backoff bien plus long
+    côté LLMManager (une génération peut durer 60-100s+ sur ce matériel)."""
+
+
 class OllamaProvider(BaseProvider):
     """Async provider for local Ollama instances.
 
@@ -164,6 +171,11 @@ class OllamaProvider(BaseProvider):
             json=payload,
             timeout=effective_timeout,
         )
+        if r.status_code == 429:
+            raise ProviderBusyError(
+                "Ollama a répondu 429 — une autre génération occupe déjà "
+                "son unique créneau de calcul."
+            )
         r.raise_for_status()
 
         data = r.json()
