@@ -4,7 +4,6 @@
 core/
 llm/
 doctor/
-client*/
 
 # =========================
 # PYTHON
