@@ -60,3 +60,15 @@ def reload_config() -> dict:
     new_config = load_config()
     logger.info("Configuration reloaded from %s", CONFIG_PATH)
     return new_config
+
+
+def get_core_url() -> str:
+    # Get the cluster core registry URL from neron.yaml.
+    config = load_config()
+    return config.get("cluster", {}).get("core", {}).get("url", "http://127.0.0.1:8010")
+
+
+def get_core_url() -> str:
+    # Get the cluster core registry URL from neron.yaml.
+    config = load_config()
+    return config.get("cluster", {}).get("core", {}).get("url", "http://127.0.0.1:8010")

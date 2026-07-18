@@ -10,6 +10,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from llm.api.routes import router
+from llm.config import get_core_url
+from llm.config import get_core_url
 from server.common.registry.client import RegistryClient
 
 VERSION = "2.1.2"
@@ -58,10 +60,11 @@ async def lifespan(app: FastAPI):
     registry_client = RegistryClient(
         service_name="llm",
         version=VERSION,
-        host="localhost",
+        host="127.0.1.2",
         port=PORT,
         capabilities=["text_generation", "chat", "completion"],
         metadata={},
+        core_url=get_core_url(),
     )
 
     app.state.registry_client = registry_client
