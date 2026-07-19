@@ -48,6 +48,10 @@ class OllamaProvider(BaseProvider):
         self._timeout_default: float = float(cfg.get("timeout", 300))
         self._timeout_race: float = float(cfg.get("race_timeout", 240))
         self._auto_pull: bool = str(cfg.get("auto_pull", "false")).lower() == "true"
+        # Cf. commentaire neron.yaml → llm.keep_alive : évite le rechargement
+        # à froid d'un modèle inactif depuis >5 min (défaut Ollama), tout en
+        # restant modeste vu la RAM limitée de Homebox (7.2 Gi, cf. `free -h`).
+        self._keep_alive: str = str(cfg.get("keep_alive", "10m"))
 
         raw_fallbacks = cfg.get("fallback_models", None)
         if isinstance(raw_fallbacks, list):
@@ -157,13 +161,15 @@ class OllamaProvider(BaseProvider):
             "model": resolved_model,
             "prompt": message,
             "stream": False,
+            "keep_alive": self._keep_alive,
         }
 
         logger.debug(
-            "ollama | POST /api/generate requested_model=%s resolved_model=%s timeout=%s",
+            "ollama | POST /api/generate requested_model=%s resolved_model=%s timeout=%s keep_alive=%s",
             model,
             resolved_model,
             effective_timeout,
+            self._keep_alive,
         )
 
         r = await self._client.post(
