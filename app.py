@@ -1,8 +1,15 @@
 # llm/app.py
 # Neron LLM microservice — main entry point.
+#
+# v3.0 refactoring:
+#   - pydantic-settings (llm.settings) for infra values
+#   - lifespan owns the full lifecycle: manager + registry client
+#   - dependency injection via app.state (no module-level singleton)
+#   - split health endpoints (/llm/health/live, /llm/health/ready)
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -10,10 +17,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from llm.api.routes import router
+from llm.core.manager import LLMManager
+from llm.settings import get_settings
 from server.common.registry.client import RegistryClient
 
-VERSION = "2.1.2"
-PORT = 8765
+VERSION = "3.0.0"
 
 
 # ── Structured JSON logging ───────────────────────────────────────────────────
@@ -49,35 +57,52 @@ logger = logging.getLogger("llm")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info(json.dumps({
-        "event": "llm_started",
-        "version": VERSION,
-        "port": PORT,
-    }))
+    settings = get_settings()
+
+    if not settings.auth_enabled:
+        logger.warning(json.dumps({
+            "event": "auth_disabled",
+            "reason": "NERON_API_KEY not set — all endpoints are unprotected",
+            "action": "set NERON_API_KEY env var to enable authentication",
+        }))
+
+    # Dependency-injected state — everything routes need lives here.
+    app.state.settings = settings
+    app.state.manager = LLMManager()
+    app.state.reload_lock = asyncio.Lock()
+    app.state.version = VERSION
 
     registry_client = RegistryClient(
         service_name="llm",
         version=VERSION,
-        host="localhost",
-        port=PORT,
+        host=settings.service_host,
+        port=settings.service_port,
         capabilities=["text_generation", "chat", "completion"],
         metadata={},
+        core_url=settings.core_url,
     )
-
     app.state.registry_client = registry_client
+
+    logger.info(json.dumps({
+        "event": "llm_started",
+        "version": VERSION,
+        "host": settings.service_host,
+        "port": settings.service_port,
+    }))
 
     try:
         await registry_client.start()
         yield
     finally:
         try:
-            if registry_client:
-                await registry_client.stop()
-
-            from llm.api.routes import manager
-            if manager and hasattr(manager, "aclose"):
-                await manager.aclose()
-
+            await registry_client.stop()
+        except Exception as exc:
+            logger.warning(json.dumps({
+                "event": "registry_stop_error",
+                "error": str(exc),
+            }))
+        try:
+            await app.state.manager.aclose()
         except Exception as exc:
             logger.warning(json.dumps({
                 "event": "llm_shutdown_error",
@@ -102,9 +127,10 @@ app.include_router(router)
 if __name__ == "__main__":
     import uvicorn
 
+    _s = get_settings()
     uvicorn.run(
-        "app:app",
-        host="127.0.0.1",
-        port=PORT,
+        "llm.app:app",
+        host=_s.service_host,
+        port=_s.service_port,
         workers=1,
     )

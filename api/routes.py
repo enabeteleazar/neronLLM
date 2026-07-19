@@ -1,112 +1,107 @@
 """neron_llm/api/routes.py
 API routes for neron_llm — fully async.
 
-v2.0: POST /llm/generate added as the primary bus endpoint.
-      POST /llm/stream  added (SSE, future-ready).
-      Existing routes preserved: /health, /reload.
+v3.0: dependency injection via app.state — no module-level manager.
+      Health split:
+        GET /llm/health/live   → liveness  (process up, no I/O)
+        GET /llm/health/ready  → readiness (providers reachable, 503 si non)
+        GET /llm/health        → compat (payload historique, utilisé par doctor)
 
 Correlation ID (x-neron-request-id) is read from headers and forwarded
 to all log entries for end-to-end tracing.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-import os
 import time
 import uuid
 from typing import AsyncIterator
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Security
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, Security
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
-from prometheus_client import (
-    Counter,
-    Histogram,
-)
+from prometheus_client import CollectorRegistry, Counter, Histogram
 
 from llm.core.manager import LLMManager
-from llm.core.types   import (
+from llm.core.types import (
     GenerateRequest,
     GenerateResponse,
     LLMRequest,
     LLMResponse,
 )
+from llm.settings import LLMSettings, get_settings
 
-logger  = logging.getLogger("llm.routes")
-router  = APIRouter()
-manager = LLMManager()
+logger = logging.getLogger("llm.routes")
+router = APIRouter()
 
-# Protège le remplacement atomique du manager lors d'un /reload.
-# asyncio.Lock() est suffisant ici — uvicorn tourne en single-worker.
-# Avec plusieurs workers, chacun a son propre espace mémoire : le lock
-# protège contre les appels /reload concurrents dans le même worker.
-_reload_lock = asyncio.Lock()
 
-# ── Authentication ─────────────────────────────────────────────────────────────
+# ── Dependency injection ──────────────────────────────────────────────────────
+
+def get_manager(request: Request) -> LLMManager:
+    return request.app.state.manager
+
+
+def get_app_settings(request: Request) -> LLMSettings:
+    # app.state d'abord (posé par lifespan) ; repli sur le cache module
+    # pour les contextes de test qui montent le router sans lifespan.
+    return getattr(request.app.state, "settings", None) or get_settings()
+
+
+# ── Authentication ────────────────────────────────────────────────────────────
 
 _API_KEY_HEADER = APIKeyHeader(name="Authorization", auto_error=False)
-from llm.config import load_config as _load_config
-def _current_api_key() -> str:
-    return os.getenv("NERON_API_KEY") or _load_config().get("neron", {}).get("api_key", "")
-
-if not _current_api_key():
-    logger.warning(
-        json.dumps({
-            "event":   "auth_disabled",
-            "reason":  "NERON_API_KEY not set — all endpoints are unprotected",
-            "action":  "set NERON_API_KEY env var to enable authentication",
-        })
-    )
 
 
 async def _require_api_key(
+    request: Request,
     key: str | None = Security(_API_KEY_HEADER),
 ) -> None:
     """FastAPI dependency — enforces API key on protected routes.
 
-    If NERON_API_KEY is not set (dev/local mode), auth is disabled and
-    all requests pass through with a warning logged at startup.
-    If set, the Authorization header must be `Bearer <token>` matching exactly.
+    If NERON_API_KEY is not set (dev/local mode), auth is disabled
+    (warning logged once at startup by lifespan).
+    If set, the Authorization header must be `Bearer <token>` (ou le token
+    brut, compat legacy) matching exactly.
     """
-    current_key = _current_api_key()
-    if not current_key:
-        return  # auth disabled — dev mode, warning already logged at import
+    settings = get_app_settings(request)
+    if not settings.auth_enabled:
+        return
 
     if key is None:
-        logger.debug("API key missing in request")
         raise HTTPException(status_code=403, detail="Invalid or missing API key")
 
-    # Accepte "Bearer <token>" (nouveau schéma) et le token brut (compat legacy)
     token = key
     if key.lower().startswith("bearer "):
         token = key[7:].strip()
 
-    logger.debug("Token check: token_prefix=%s (len=%s), expected_prefix=%s (len=%s)", token[:4] if token else "", len(token) if token else 0, current_key[:4] if current_key else "", len(current_key) if current_key else 0)
-    if token != current_key:
+    if token != settings.api_key:
         raise HTTPException(status_code=403, detail="Invalid or missing API key")
 
-# ── Prometheus metrics (registered once) ──────────────────────────────────────
 
-def _safe_counter(name: str, doc: str, labels: list[str] | None = None) -> Counter:
-    from prometheus_client import REGISTRY
-    if name in REGISTRY._names_to_collectors:
-        return REGISTRY._names_to_collectors[name]  # type: ignore[return-value]
-    return Counter(name, doc, labels or [])
+# ── Prometheus metrics ────────────────────────────────────────────────────────
+# Créées une fois à l'import. En cas de ré-import (tests), repli sur un
+# registre jetable — aucune API privée de prometheus_client n'est utilisée.
+
+def _build_metrics(registry=None) -> dict:
+    kw = {"registry": registry} if registry is not None else {}
+    return {
+        "requests":  Counter("neron_llm_requests_total", "Total generate requests", ["task_type"], **kw),
+        "errors":    Counter("neron_llm_errors_total", "Total errors", ["task_type"], **kw),
+        "latency":   Histogram("neron_llm_latency_ms", "Latency ms", ["task_type"], **kw),
+        "fallbacks": Counter("neron_llm_fallbacks_total", "Model fallbacks fired", ["reason"], **kw),
+    }
 
 
-def _safe_histogram(name: str, doc: str, labels: list[str] | None = None) -> Histogram:
-    from prometheus_client import REGISTRY
-    if name in REGISTRY._names_to_collectors:
-        return REGISTRY._names_to_collectors[name]  # type: ignore[return-value]
-    return Histogram(name, doc, labels or [])
+try:
+    _metrics = _build_metrics()
+except ValueError:  # already registered (module re-imported in tests)
+    _metrics = _build_metrics(registry=CollectorRegistry())
 
-
-_metric_requests  = _safe_counter(  "neron_llm_requests_total",  "Total generate requests", ["task_type"])
-_metric_errors    = _safe_counter(  "neron_llm_errors_total",    "Total errors",            ["task_type"])
-_metric_latency   = _safe_histogram("neron_llm_latency_ms",      "Latency ms",              ["task_type"])
-_metric_fallbacks = _safe_counter(  "neron_llm_fallbacks_total", "Model fallbacks fired",   ["reason"])
+_metric_requests = _metrics["requests"]
+_metric_errors = _metrics["errors"]
+_metric_latency = _metrics["latency"]
+_metric_fallbacks = _metrics["fallbacks"]
 
 
 # ── Helper: extract correlation ID ────────────────────────────────────────────
@@ -122,7 +117,11 @@ def _request_id(request: Request | None = None, body_rid: str = "") -> str:
 # ── POST /llm/generate — PRIMARY BUS ENDPOINT ─────────────────────────────────
 
 @router.post("/llm/generate", response_model=GenerateResponse, dependencies=[Depends(_require_api_key)])
-async def generate(req: GenerateRequest, request: Request) -> GenerateResponse:
+async def generate(
+    req: GenerateRequest,
+    request: Request,
+    manager: LLMManager = Depends(get_manager),
+) -> GenerateResponse:
     """Primary REST bus endpoint.  server/ calls ONLY this route.
 
     Translates GenerateRequest → internal LLMRequest, runs the manager
@@ -142,7 +141,6 @@ async def generate(req: GenerateRequest, request: Request) -> GenerateResponse:
 
     t0 = time.monotonic()
 
-    # Translate public request → internal pipeline
     internal = LLMRequest(
         message  = req.prompt,
         task     = req.task_type,
@@ -155,7 +153,6 @@ async def generate(req: GenerateRequest, request: Request) -> GenerateResponse:
 
     _metric_latency.labels(task_type=req.task_type).observe(latency_ms)
 
-    # All providers failed
     if result.provider == "none":
         _metric_errors.labels(task_type=req.task_type).inc()
         logger.error(
@@ -195,7 +192,11 @@ async def generate(req: GenerateRequest, request: Request) -> GenerateResponse:
 # ── POST /llm/stream — SSE streaming (future-ready) ──────────────────────────
 
 @router.post("/llm/stream", dependencies=[Depends(_require_api_key)])
-async def stream(req: GenerateRequest, request: Request) -> StreamingResponse:
+async def stream(
+    req: GenerateRequest,
+    request: Request,
+    manager: LLMManager = Depends(get_manager),
+) -> StreamingResponse:
     """Streaming endpoint — Server-Sent Events.
 
     Currently implemented as a single non-streamed generate wrapped in SSE
@@ -218,7 +219,6 @@ async def stream(req: GenerateRequest, request: Request) -> StreamingResponse:
                 yield f"data: {json.dumps({'token': '', 'done': True, 'error': result.error})}\n\n"
                 return
 
-            # Emit entire response as a single token event
             # TODO: replace with token-by-token streaming via OllamaProvider.stream()
             yield f"data: {json.dumps({'token': result.response, 'done': False})}\n\n"
             yield f"data: {json.dumps({'token': '', 'done': True, 'model_used': result.model})}\n\n"
@@ -232,28 +232,61 @@ async def stream(req: GenerateRequest, request: Request) -> StreamingResponse:
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-# ── GET /llm/health ───────────────────────────────────────────────────────────
+# ── Health: liveness / readiness (split Kubernetes-compatible) ────────────────
+
+async def _ollama_reachable(manager: LLMManager) -> bool:
+    try:
+        provider = manager.providers.get("ollama")
+        if provider is None:
+            return False
+        r = await provider._client.get("/api/tags", timeout=3.0)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+@router.get("/llm/health/live")
+async def health_live(request: Request) -> dict:
+    """Liveness — process vivant, aucune I/O. Toujours 200 si on répond."""
+    return {
+        "status": "alive",
+        "service": "neron_llm",
+        "version": getattr(request.app.state, "version", "unknown"),
+    }
+
+
+@router.get("/llm/health/ready")
+async def health_ready(
+    request: Request,
+    response: Response,
+    manager: LLMManager = Depends(get_manager),
+) -> dict:
+    """Readiness — providers joignables. 503 sinon (retiré du LB/registry)."""
+    ollama_up = await _ollama_reachable(manager)
+    if not ollama_up:
+        response.status_code = 503
+    return {
+        "status": "ready" if ollama_up else "not_ready",
+        "service": "neron_llm",
+        "version": getattr(request.app.state, "version", "unknown"),
+        "providers": {
+            "ollama": "up" if ollama_up else "down",
+            "claude": "configured",
+        },
+    }
+
 
 @router.get("/llm/health")
-async def health() -> dict:
-    """Health check — reports per-provider status."""
-    ollama_up: bool = False
-    try:
-        # Reuse the shared OllamaProvider client (no new TCP connection).
-        # Override timeout for this call only: health checks must be fast.
-        ollama_provider = manager.providers.get("ollama")
-        if ollama_provider is not None:
-            r = await ollama_provider._client.get(
-                "/api/tags", timeout=3.0,
-            )
-            ollama_up = r.status_code == 200
-    except Exception:
-        pass
-
+async def health(
+    request: Request,
+    manager: LLMManager = Depends(get_manager),
+) -> dict:
+    """Compat historique (doctor, scripts) — payload inchangé, version dynamique."""
+    ollama_up = await _ollama_reachable(manager)
     return {
         "status":    "ok" if ollama_up else "degraded",
         "service":   "neron_llm",
-        "version":   "2.1.0",
+        "version":   getattr(request.app.state, "version", "unknown"),
         "providers": {
             "ollama": "up" if ollama_up else "down",
             "claude": "configured",
@@ -264,21 +297,21 @@ async def health() -> dict:
 # ── POST /llm/reload ─────────────────────────────────────────────────────────
 
 @router.post("/llm/reload", dependencies=[Depends(_require_api_key)])
-async def reload() -> dict:
+async def reload(request: Request) -> dict:
     """Hot-reload YAML config without restarting the service.
 
     Safe mode:
-      1. Lock prevents concurrent reloads.
+      1. app.state.reload_lock prevents concurrent reloads.
       2. New manager is fully constructed before swapping.
       3. Old manager's HTTP clients are closed after the swap.
     """
-    global manager
-    async with _reload_lock:
+    state = request.app.state
+    async with state.reload_lock:
         try:
             from llm.config import reload_config
             reload_config()
-            new_manager = LLMManager()       # raises if config is broken — old manager kept
-            old_manager, manager = manager, new_manager
+            new_manager = LLMManager()   # raises if config is broken — old manager kept
+            old_manager, state.manager = state.manager, new_manager
             logger.info(json.dumps({"event": "config_reloaded"}))
         except Exception as exc:
             logger.error(json.dumps({"event": "config_reload_failed", "error": str(exc)}))

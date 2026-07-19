@@ -23,6 +23,14 @@ RETRY_BASE_DELAY = 1.0   # secondes — délai avant la 2e tentative
 RETRY_MAX_DELAY  = 10.0  # secondes — plafond (croissance exponentielle)
 RETRY_JITTER     = 0.3   # secondes — aléatoire ajouté pour éviter les rafales
 
+# Cas spécifique "provider occupé" (429 Ollama) : une génération peut
+# légitimement durer 60-100s+ sur ce matériel avec un seul créneau
+# disponible — le backoff générique ci-dessus (1-10s) est bien trop court
+# pour espérer que le créneau se libère entre deux tentatives.
+BUSY_MAX_RETRIES      = 3
+BUSY_RETRY_BASE_DELAY = 8.0
+BUSY_RETRY_MAX_DELAY  = 30.0
+
 
 class LLMManager:
     """Orchestrates LLM calls across providers with strategy and fallback."""
@@ -213,7 +221,9 @@ class LLMManager:
             )
 
         last_result: LLMResponse | None = None
-        for attempt in range(1, MAX_RETRIES + 1):
+        attempt = 1
+        max_retries = MAX_RETRIES  # peut être étendu à BUSY_MAX_RETRIES au 1er 429
+        while attempt <= max_retries:
             t0     = time.monotonic()
             result = await self._call_provider(provider_name, provider, message, model)
             elapsed_ms = int((time.monotonic() - t0) * 1000)
@@ -221,16 +231,22 @@ class LLMManager:
             if result.error is None:
                 return result
 
-            # Délai avant la prochaine tentative.
+            # Une erreur "provider occupé" (429) mérite un backoff bien plus
+            # long qu'une erreur réseau/timeout classique — on bascule sur
+            # les constantes BUSY_* dès qu'on la détecte, y compris en
+            # augmentant le budget de tentatives pour ce cas précis.
+            is_busy = (result.error or "").startswith("ProviderBusyError")
+            if is_busy and max_retries < BUSY_MAX_RETRIES:
+                max_retries = BUSY_MAX_RETRIES
+
+            will_retry = attempt < max_retries
+            if is_busy:
+                base, cap = BUSY_RETRY_BASE_DELAY, BUSY_RETRY_MAX_DELAY
+            else:
+                base, cap = RETRY_BASE_DELAY, RETRY_MAX_DELAY
             # Formule : min(base × 2^(attempt-1) + jitter, max)
-            #   attempt 1 → ~1.0s + jitter
-            #   attempt 2 → ~2.0s + jitter
-            # Pas de sleep après la dernière tentative — inutile d'attendre
-            # avant de passer au fallback ou de retourner l'erreur.
-            will_retry = attempt < MAX_RETRIES
             wait_s = (
-                min(RETRY_BASE_DELAY * (2 ** (attempt - 1)) + random.uniform(0, RETRY_JITTER),
-                    RETRY_MAX_DELAY)
+                min(base * (2 ** (attempt - 1)) + random.uniform(0, RETRY_JITTER), cap)
                 if will_retry else 0.0
             )
 
@@ -240,7 +256,8 @@ class LLMManager:
                     "provider":   provider_name,
                     "model":      model,
                     "attempt":    attempt,
-                    "max":        MAX_RETRIES,
+                    "max":        max_retries,
+                    "busy":       is_busy,
                     "error":      result.error,
                     "elapsed_ms": elapsed_ms,
                     "wait_ms":    int(wait_s * 1000),
@@ -250,10 +267,11 @@ class LLMManager:
 
             if will_retry:
                 await asyncio.sleep(wait_s)
+            attempt += 1
 
         return last_result or LLMResponse(
             model=model, provider=provider_name, response="",
-            error=f"Provider '{provider_name}' failed after {MAX_RETRIES} attempts",
+            error=f"Provider '{provider_name}' failed after {max_retries} attempts",
         )
 
     async def _call_provider(

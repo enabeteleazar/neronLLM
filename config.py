@@ -60,3 +60,11 @@ def reload_config() -> dict:
     new_config = load_config()
     logger.info("Configuration reloaded from %s", CONFIG_PATH)
     return new_config
+
+
+def get_core_url() -> str:
+    """Core registry URL — deprecated shim, delegates to llm.settings."""
+    from llm.settings import get_settings
+    return get_settings().core_url
+
+
