@@ -10,13 +10,17 @@ logger = logging.getLogger("neron_llm.router")
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
 # Used when task is unknown AND no 'default' key exists in config
-FALLBACK_MODEL = "deepseek-coder:6.7b"
+FALLBACK_MODEL = "llama3.2:3b"
 
-# Ordered fallback chain — first model in list is preferred
+# Ordered fallback chain — first model in list is preferred.
+# Doit lister uniquement des modèles réellement présents en local
+# (vérifier avec `ollama list` sur Homebox) — jamais un tag ":cloud"
+# nécessitant un abonnement, qui échouerait systématiquement.
 MODEL_FALLBACK_CHAIN: list[str] = [
-    "qwen2.5-coder:14b",
-    "deepseek-coder:6.7b",
-    "llama3.2:1b",
+    "llama3.2:3b",
+    "Qwen2.5-Coder:1.5b",
+    "qwen3:1.7b",
+    "qwen3:latest",
 ]
 
 # Provider fallback chain — ordre de préférence pour le fallback provider.
@@ -25,13 +29,13 @@ PROVIDER_CHAIN: list[str] = ["ollama"]
 
 # Built-in task → model defaults (overridable via neron.yaml → routing:)
 _DEFAULT_TASK_ROUTING: dict[str, str] = {
-    "code":      "qwen2.5-coder:14b",
-    "reasoning": "qwen2.5-coder:14b",
-    "agent":     "qwen2.5-coder:14b",
-    "chat":      "llama3.2:1b",
-    "fast":      "llama3.2:1b",
-    "summary":   "llama3.2:1b",
-    "default":   "llama3.2:1b",
+    "code":      "Qwen2.5-Coder:1.5b",
+    "reasoning": "qwen3:latest",
+    "agent":     "Qwen2.5-Coder:1.5b",
+    "chat":      "llama3.2:3b",
+    "fast":      "llama3.2:3b",
+    "summary":   "llama3.2:3b",
+    "default":   "llama3.2:3b",
 }
 
 
@@ -61,18 +65,28 @@ class LLMRouter:
     def get_fallback_model(self, current_model: str) -> str | None:
         """Return the next model in the fallback chain after current_model.
 
-        Returns None if current_model is already the last in the chain.
+        If current_model is already in the chain, returns the next entry.
+        If current_model is unknown (e.g. misconfigured routing pointing to
+        a model that was never pulled), starts from the FIRST entry of the
+        chain rather than silently jumping to the last one — an unknown
+        model should degrade to the *most capable* fallback, not the
+        smallest, and the caller's logs should make clear this was a
+        "model not found" case rather than a normal mid-chain fallback.
         """
-        try:
-            idx = MODEL_FALLBACK_CHAIN.index(current_model)
-            if idx + 1 < len(MODEL_FALLBACK_CHAIN):
-                next_model = MODEL_FALLBACK_CHAIN[idx + 1]
-                logger.debug("Router: model fallback %s → %s", current_model, next_model)
-                return next_model
-        except ValueError:
-            # current_model not in chain — return first fallback
+        if current_model not in MODEL_FALLBACK_CHAIN:
             if MODEL_FALLBACK_CHAIN:
-                return MODEL_FALLBACK_CHAIN[-1]
+                logger.warning(
+                    "Router: model '%s' not in fallback chain — starting from '%s'",
+                    current_model, MODEL_FALLBACK_CHAIN[0],
+                )
+                return MODEL_FALLBACK_CHAIN[0]
+            return None
+
+        idx = MODEL_FALLBACK_CHAIN.index(current_model)
+        if idx + 1 < len(MODEL_FALLBACK_CHAIN):
+            next_model = MODEL_FALLBACK_CHAIN[idx + 1]
+            logger.debug("Router: model fallback %s → %s", current_model, next_model)
+            return next_model
         return None
 
     # ── Provider selection ────────────────────────────────────────────────────
