@@ -13,10 +13,10 @@ import pytest
 from fastapi import HTTPException
 from unittest.mock import patch
 
-from core.manager import LLMManager, MAX_RETRIES
-from core.router import LLMRouter
-from core.strategy import StrategyEngine
-from core.types import LLMRequest, LLMResponse
+from llm.core.manager import LLMManager, MAX_RETRIES
+from llm.core.router import LLMRouter
+from llm.core.strategy import StrategyEngine
+from llm.core.types import LLMRequest, LLMResponse
 from providers.base import BaseProvider
 
 
@@ -449,7 +449,7 @@ def test_auth_accepts_correct_key():
 def test_generate_request_rejects_empty_prompt():
     """Empty prompt must be rejected by Pydantic."""
     from pydantic import ValidationError
-    from core.types import GenerateRequest
+    from llm.core.types import GenerateRequest
 
     try:
         GenerateRequest(task_type="chat", prompt="")
@@ -463,7 +463,7 @@ def test_generate_request_rejects_empty_prompt():
 def test_generate_request_rejects_oversized_prompt():
     """Prompt exceeding PROMPT_MAX_LEN must be rejected."""
     from pydantic import ValidationError
-    from core.types import GenerateRequest, PROMPT_MAX_LEN
+    from llm.core.types import GenerateRequest, PROMPT_MAX_LEN
 
     try:
         GenerateRequest(task_type="chat", prompt="x" * (PROMPT_MAX_LEN + 1))
@@ -476,7 +476,7 @@ def test_generate_request_rejects_oversized_prompt():
 
 def test_generate_request_accepts_max_prompt():
     """Prompt exactly at the limit must be accepted."""
-    from core.types import GenerateRequest, PROMPT_MAX_LEN
+    from llm.core.types import GenerateRequest, PROMPT_MAX_LEN
 
     req = GenerateRequest(task_type="chat", prompt="x" * PROMPT_MAX_LEN)
     assert len(req.prompt) == PROMPT_MAX_LEN
@@ -487,7 +487,7 @@ def test_generate_request_accepts_max_prompt():
 def test_generate_request_rejects_oversized_context():
     """Context dict exceeding CONTEXT_MAX_KEYS must be rejected."""
     from pydantic import ValidationError
-    from core.types import GenerateRequest, CONTEXT_MAX_KEYS
+    from llm.core.types import GenerateRequest, CONTEXT_MAX_KEYS
 
     try:
         big_context = {str(i): "v" for i in range(CONTEXT_MAX_KEYS + 1)}
@@ -502,7 +502,7 @@ def test_generate_request_rejects_oversized_context():
 def test_llm_request_rejects_empty_message():
     """Legacy LLMRequest also validates message length."""
     from pydantic import ValidationError
-    from core.types import LLMRequest
+    from llm.core.types import LLMRequest
 
     try:
         LLMRequest(message="")

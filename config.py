@@ -63,12 +63,12 @@ def reload_config() -> dict:
 
 
 def get_core_url() -> str:
-    # Get the cluster core registry URL from neron.yaml.
+    """Core registry URL: env NERON_CORE_URL > neron.yaml cluster.core.url > défaut topologie."""
+    import os
+    url = os.getenv("NERON_CORE_URL")
+    if url:
+        return url.rstrip("/")
     config = load_config()
-    return config.get("cluster", {}).get("core", {}).get("url", "http://127.0.0.1:8010")
+    return config.get("cluster", {}).get("core", {}).get("url", "http://127.0.1.1:8010")
 
 
-def get_core_url() -> str:
-    # Get the cluster core registry URL from neron.yaml.
-    config = load_config()
-    return config.get("cluster", {}).get("core", {}).get("url", "http://127.0.0.1:8010")

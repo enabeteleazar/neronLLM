@@ -5,17 +5,18 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from llm.api.routes import router
 from llm.config import get_core_url
-from llm.config import get_core_url
 from server.common.registry.client import RegistryClient
 
 VERSION = "2.1.2"
-PORT = 8765
+HOST = os.getenv("NERON_SERVICE_HOST", "127.0.1.2")
+PORT = int(os.getenv("NERON_SERVICE_PORT", "8765"))
 
 
 # ── Structured JSON logging ───────────────────────────────────────────────────
@@ -60,7 +61,7 @@ async def lifespan(app: FastAPI):
     registry_client = RegistryClient(
         service_name="llm",
         version=VERSION,
-        host="127.0.1.2",
+        host=HOST,
         port=PORT,
         capabilities=["text_generation", "chat", "completion"],
         metadata={},
@@ -106,8 +107,8 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "app:app",
-        host="127.0.0.1",
+        "llm.app:app",
+        host=HOST,
         port=PORT,
         workers=1,
     )
