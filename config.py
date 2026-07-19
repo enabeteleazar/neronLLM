@@ -63,12 +63,8 @@ def reload_config() -> dict:
 
 
 def get_core_url() -> str:
-    """Core registry URL: env NERON_CORE_URL > neron.yaml cluster.core.url > défaut topologie."""
-    import os
-    url = os.getenv("NERON_CORE_URL")
-    if url:
-        return url.rstrip("/")
-    config = load_config()
-    return config.get("cluster", {}).get("core", {}).get("url", "http://127.0.1.1:8010")
+    """Core registry URL — deprecated shim, delegates to llm.settings."""
+    from llm.settings import get_settings
+    return get_settings().core_url
 
 
