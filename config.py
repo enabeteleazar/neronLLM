@@ -14,10 +14,6 @@ logger = logging.getLogger("llm.config")
 
 CONFIG_PATH = NERON_CONFIG
 
-# Keys that are NOT model mappings (e.g. timeout) — filtered out of routing
-_ROUTING_META_KEYS = {"timeout", "default_provider"}
-
-
 def load_config() -> dict:
     # Load and cache the full YAML configuration.# 
     return _load_config_cached()
@@ -44,14 +40,30 @@ def get_llm_config() -> dict:
     return load_config().get("llm", {})
 
 
-def get_routing_config() -> dict:
-    # Get the routing section. Prefers 'routing' key, falls back to 'model_map'.# 
-    config = load_config()
-    routing = config.get("routing", {})
-    if not routing:
-        routing = config.get("model_map", {})
-    # Filter out meta keys (timeout, default_provider, etc.)
-    return {k: v for k, v in routing.items() if k not in _ROUTING_META_KEYS}
+def get_tasks_config() -> dict[str, dict]:
+    """Section 'tasks:' de neron.yaml — un bloc {provider(s)/model/mode} par
+    tâche. Remplace les anciennes sections model_map/routing/strategy
+    (fusionnées ici, un seul endroit à lire par tâche)."""
+    tasks = load_config().get("tasks", {})
+    return tasks if isinstance(tasks, dict) else {}
+
+
+def get_providers_allowed() -> list[str]:
+    """Liste blanche des providers utilisables, TOUS usages confondus.
+    Un provider absent de cette liste est ignoré par le router, quelle
+    que soit la config de la tâche — c'est la première barrière avant
+    le plancher de sécurité."""
+    allowed = get_llm_config().get("providers_allowed")
+    if isinstance(allowed, list) and allowed:
+        return [str(p) for p in allowed]
+    return ["ollama"]
+
+
+def get_safety_floor_provider() -> str:
+    """Provider utilisé quand une tâche n'a pas de config valide, ou que
+    son provider configuré est invalide/non implémenté. Ne doit JAMAIS
+    être un provider externe — validé une seconde fois dans router.py."""
+    return str(get_llm_config().get("safety_floor_provider") or "ollama")
 
 
 def reload_config() -> dict:

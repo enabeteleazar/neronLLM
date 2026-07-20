@@ -61,38 +61,48 @@ class LLMManager:
 
     async def handle(self, request: LLMRequest) -> LLMResponse:
         """Route, strategize, and execute the request."""
-        mode          = self.strategy.decide(task=request.task, mode=request.mode)
-        model         = request.model or self.router.select_model(task=request.task)
-        provider_name = self.router.select_provider(provider=request.provider)
+        mode      = self.strategy.decide(task=request.task, mode=request.mode)
+        model     = request.model or self.router.select_model(task=request.task)
+        providers = self.router.providers_for(task=request.task, explicit=request.provider)
+
+        if mode in ("parallel", "race") and len(providers) < 2:
+            logger.debug(
+                json.dumps({
+                    "event": "mode_downgraded_single",
+                    "task": request.task, "requested_mode": mode, "providers": providers,
+                })
+            )
+            mode = "single"
 
         logger.info(
             json.dumps({
-                "event":    "llm_handle",
-                "task":     request.task,
-                "mode":     mode,
-                "model":    model,
-                "provider": provider_name,
+                "event":     "llm_handle",
+                "task":      request.task,
+                "mode":      mode,
+                "model":     model,
+                "providers": providers,
             })
         )
 
         if mode == "parallel":
-            return await self._execute_parallel(request, model)
+            return await self._execute_parallel(request, model, providers)
         elif mode == "race":
-            return await self._execute_race(request, model)
+            return await self._execute_race(request, model, providers)
         else:
-            return await self._execute_single(request, model, provider_name)
+            return await self._execute_single(request, model, providers[0], task=request.task)
 
     # ── Mode SINGLE — model fallback then provider fallback ───────────────────
 
     async def _execute_single(
-        self, request: LLMRequest, model: str, provider_name: str,
+        self, request: LLMRequest, model: str, provider_name: str, *, task: str | None = None,
     ) -> LLMResponse:
         """Execute with one provider.
 
         Fallback order:
           1. retry (×MAX_RETRIES) on primary model
-          2. switch to next model in chain (deepseek-coder:6.7b)
-          3. try next provider in chain (ollama → claude)
+          2. switch to next model in chain
+          3. try next provider dans la chaîne PROPRE À LA TÂCHE (tasks.<task>.providers) —
+             jamais un provider hors de cette liste, cf LLMRouter.providers_for().
         """
         # Attempt primary model
         result = await self._call_with_retry(provider_name, request.message, model)
@@ -114,8 +124,8 @@ class LLMManager:
             if result.error is None:
                 return result
 
-        # Provider-level fallback
-        fallback_provider = self.router.get_fallback_provider(provider_name)
+        # Provider-level fallback (borné à la liste de la tâche)
+        fallback_provider = self.router.get_fallback_provider(provider_name, task=task)
         if fallback_provider and fallback_provider in self.providers:
             logger.warning(
                 json.dumps({
@@ -133,13 +143,20 @@ class LLMManager:
     # ── Mode PARALLEL — all providers, pick best ──────────────────────────────
 
     async def _execute_parallel(
-        self, request: LLMRequest, model: str,
+        self, request: LLMRequest, model: str, providers: list[str],
     ) -> LLMResponse:
-        """Execute on all providers in parallel; return longest valid response."""
+        """Execute in parallel UNIQUEMENT sur les providers passés en
+        paramètre (résolus par LLMRouter.providers_for, donc déjà filtrés
+        par providers_allowed + IMPLEMENTED_PROVIDERS). Ne boucle plus
+        jamais sur self.providers en entier — c'était le trou qui laissait
+        passer un provider externe non voulu dès que mode='parallel'."""
         tasks = [
-            self._call_provider(name, provider, request.message, model)
-            for name, provider in self.providers.items()
+            self._call_provider(name, self.providers[name], request.message, model)
+            for name in providers
+            if name in self.providers
         ]
+        if not tasks:
+            return LLMResponse(model=model, provider="none", response="", error="No valid providers")
         results = await asyncio.gather(*tasks)
 
         valid = [r for r in results if r.error is None]
@@ -163,15 +180,19 @@ class LLMManager:
     # ── Mode RACE — first completed wins ─────────────────────────────────────
 
     async def _execute_race(
-        self, request: LLMRequest, model: str,
+        self, request: LLMRequest, model: str, providers: list[str],
     ) -> LLMResponse:
-        """Execute on all providers; return first to complete successfully.
+        """Execute UNIQUEMENT sur les providers passés en paramètre (déjà
+        filtrés par le router) ; le premier à répondre gagne.
 
         Uses race_timeout (default 30s) instead of the full generation timeout
         to ensure fast failure and avoid blocking the event loop.
         """
         tasks: dict[asyncio.Task, str] = {}
-        for name, provider in self.providers.items():
+        for name in providers:
+            provider = self.providers.get(name)
+            if provider is None:
+                continue
             # Skip providers that aren't configured
             if hasattr(provider, 'is_available') and not provider.is_available():
                 continue
