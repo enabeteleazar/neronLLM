@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from llm.api.routes import router
 from llm.core.manager import LLMManager
 from llm.settings import get_settings
+from server.common.metrics import mount_metrics
 from server.common.paths import service_version
 from server.common.registry.client import RegistryClient
 
@@ -121,6 +122,8 @@ app = FastAPI(
     version=VERSION,
     lifespan=lifespan,
 )
+
+mount_metrics(app, "llm")
 
 app.include_router(router)
 
