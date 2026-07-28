@@ -19,9 +19,10 @@ from fastapi import FastAPI
 from llm.api.routes import router
 from llm.core.manager import LLMManager
 from llm.settings import get_settings
+from server.common.paths import service_version
 from server.common.registry.client import RegistryClient
 
-VERSION = "3.0.0"
+VERSION = service_version(__file__)
 
 
 # ── Structured JSON logging ───────────────────────────────────────────────────
