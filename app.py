@@ -3,7 +3,7 @@
 #
 # v3.0 refactoring:
 #   - pydantic-settings (llm.settings) for infra values
-#   - lifespan owns the full lifecycle: manager + registry client
+#   - squelette commun (server/common/service.py) : health, metrics, registry
 #   - dependency injection via app.state (no module-level singleton)
 #   - split health endpoints (/llm/health/live, /llm/health/ready)
 
@@ -19,9 +19,8 @@ from fastapi import FastAPI
 from llm.api.routes import router
 from llm.core.manager import LLMManager
 from llm.settings import get_settings
-from server.common.metrics import mount_metrics
 from server.common.paths import service_version
-from server.common.registry.client import RegistryClient
+from server.common.service import create_service_app
 
 VERSION = service_version(__file__)
 
@@ -55,10 +54,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("llm")
 
 
-# ── Lifespan ──────────────────────────────────────────────────────────────────
+# ── FastAPI app ───────────────────────────────────────────────────────────────
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def _setup(app: FastAPI):
     settings = get_settings()
 
     if not settings.auth_enabled:
@@ -68,22 +67,9 @@ async def lifespan(app: FastAPI):
             "action": "set NERON_API_KEY env var to enable authentication",
         }))
 
-    # Dependency-injected state — everything routes need lives here.
     app.state.settings = settings
     app.state.manager = LLMManager()
     app.state.reload_lock = asyncio.Lock()
-    app.state.version = VERSION
-
-    registry_client = RegistryClient(
-        service_name="llm",
-        version=VERSION,
-        host=settings.service_host,
-        port=settings.service_port,
-        capabilities=["text_generation", "chat", "completion"],
-        metadata={},
-        core_url=settings.core_url,
-    )
-    app.state.registry_client = registry_client
 
     logger.info(json.dumps({
         "event": "llm_started",
@@ -93,16 +79,8 @@ async def lifespan(app: FastAPI):
     }))
 
     try:
-        await registry_client.start()
         yield
     finally:
-        try:
-            await registry_client.stop()
-        except Exception as exc:
-            logger.warning(json.dumps({
-                "event": "registry_stop_error",
-                "error": str(exc),
-            }))
         try:
             await app.state.manager.aclose()
         except Exception as exc:
@@ -110,20 +88,17 @@ async def lifespan(app: FastAPI):
                 "event": "llm_shutdown_error",
                 "error": str(exc),
             }))
-
         logger.info(json.dumps({"event": "llm_stopped"}))
 
 
-# ── FastAPI app ───────────────────────────────────────────────────────────────
-
-app = FastAPI(
+app = create_service_app(
+    name="llm",
     title="neronOS_LLM",
     description="Microservice IA — routing modèles, abstraction providers",
     version=VERSION,
-    lifespan=lifespan,
+    capabilities=["text_generation", "chat", "completion"],
+    setup=_setup,
 )
-
-mount_metrics(app, "llm")
 
 app.include_router(router)
 
