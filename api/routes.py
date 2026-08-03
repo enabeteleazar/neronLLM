@@ -146,6 +146,7 @@ async def generate(
         task     = req.task_type,
         model    = None if req.model_preference == "auto" else req.model_preference,
         metadata = {k: str(v) for k, v in req.context.items()} if req.context else None,
+        json_mode = req.json_mode,
     )
 
     result: LLMResponse = await manager.handle(internal)
@@ -212,6 +213,7 @@ async def stream(
                 task     = req.task_type,
                 model    = None if req.model_preference == "auto" else req.model_preference,
                 metadata = {k: str(v) for k, v in req.context.items()} if req.context else None,
+                json_mode = req.json_mode,
             )
             result = await manager.handle(internal)
 

@@ -29,6 +29,7 @@ class LLMRequest(BaseModel):
     provider: Optional[str]                              = Field(default=None)
     model:    Optional[str]                              = Field(default=None)
     metadata: Optional[Dict[str, str]]                   = Field(default=None)
+    json_mode: bool                                      = Field(default=False)
 
 
 class LLMResponse(BaseModel):
@@ -50,6 +51,7 @@ class GenerateRequest(BaseModel):
     context:          Dict[str, str]  = Field(default_factory=dict, max_length=CONTEXT_MAX_KEYS)
     model_preference: str             = Field(default="auto")
     request_id:       str             = Field(default="")
+    json_mode:        bool            = Field(default=False)
 
 
 class GenerateResponse(BaseModel):

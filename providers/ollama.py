@@ -148,7 +148,8 @@ class OllamaProvider(BaseProvider):
             f"Aucun modèle Ollama disponible. Modèle demandé : {requested_model or 'non défini'}"
         )
 
-    async def generate(self, message: str, model: str, timeout: float | None = None) -> str:
+    async def generate(self, message: str, model: str, timeout: float | None = None,
+                       json_mode: bool = False) -> str:
         """Generate a response via Ollama's /api/generate endpoint."""
         effective_timeout = timeout if timeout is not None else self._timeout_default
         resolved_model = await self._resolve_model(model)
@@ -158,6 +159,8 @@ class OllamaProvider(BaseProvider):
             "prompt": message,
             "stream": False,
         }
+        if json_mode:
+            payload["format"] = "json"
 
         logger.debug(
             "ollama | POST /api/generate requested_model=%s resolved_model=%s timeout=%s",

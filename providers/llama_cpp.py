@@ -91,7 +91,8 @@ class LlamaCppProvider(BaseProvider):
         """Retourne False si llama_cpp_host n'est pas configuré."""
         return bool(self._host)
 
-    async def generate(self, message: str, model: str, timeout: float | None = None) -> str:
+    async def generate(self, message: str, model: str, timeout: float | None = None,
+                       json_mode: bool = False) -> str:
         """Génère une réponse via l'endpoint /completion de llama.cpp server.
 
         Args:

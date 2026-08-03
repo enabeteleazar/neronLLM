@@ -58,7 +58,8 @@ class ClaudeProvider(BaseProvider):
     def is_available(self) -> bool:
         return bool(self.api_key)
 
-    async def generate(self, message: str, model: str, timeout: float | None = None) -> str:
+    async def generate(self, message: str, model: str, timeout: float | None = None,
+                       json_mode: bool = False) -> str:
         """Generate a response via the Anthropic Messages API.
 
         Args:

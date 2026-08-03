@@ -9,7 +9,8 @@ class BaseProvider(ABC):
     """Abstract interface for LLM providers."""
 
     @abstractmethod
-    async def generate(self, message: str, model: str, timeout: float | None = None) -> str:
+    async def generate(self, message: str, model: str, timeout: float | None = None,
+                       json_mode: bool = False) -> str:
         """Send a message to the LLM and return the text response.
 
         Args:

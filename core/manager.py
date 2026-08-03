@@ -105,7 +105,8 @@ class LLMManager:
              jamais un provider hors de cette liste, cf LLMRouter.providers_for().
         """
         # Attempt primary model
-        result = await self._call_with_retry(provider_name, request.message, model)
+        result = await self._call_with_retry(provider_name, request.message, model,
+                                             json_mode=request.json_mode)
         if result.error is None:
             return result
 
@@ -120,7 +121,8 @@ class LLMManager:
                     "provider":       provider_name,
                 })
             )
-            result = await self._call_with_retry(provider_name, request.message, fallback_model)
+            result = await self._call_with_retry(provider_name, request.message, fallback_model,
+                                                 json_mode=request.json_mode)
             if result.error is None:
                 return result
 
@@ -135,7 +137,8 @@ class LLMManager:
                 })
             )
             result = await self._call_with_retry(
-                fallback_provider, request.message, fallback_model or model
+                fallback_provider, request.message, fallback_model or model,
+                json_mode=request.json_mode,
             )
 
         return result
@@ -151,7 +154,8 @@ class LLMManager:
         jamais sur self.providers en entier — c'était le trou qui laissait
         passer un provider externe non voulu dès que mode='parallel'."""
         tasks = [
-            self._call_provider(name, self.providers[name], request.message, model)
+            self._call_provider(name, self.providers[name], request.message, model,
+                                json_mode=request.json_mode)
             for name in providers
             if name in self.providers
         ]
@@ -200,7 +204,8 @@ class LLMManager:
             race_timeout = getattr(provider, "_timeout_race", None)
             task = asyncio.create_task(
                 self._call_provider(name, provider, request.message, model,
-                                    timeout=race_timeout)
+                                    timeout=race_timeout,
+                                    json_mode=request.json_mode)
             )
             tasks[task] = name
 
@@ -233,6 +238,7 @@ class LLMManager:
 
     async def _call_with_retry(
         self, provider_name: str, message: str, model: str,
+        *, json_mode: bool = False,
     ) -> LLMResponse:
         provider = self.providers.get(provider_name)
         if not provider:
@@ -246,7 +252,8 @@ class LLMManager:
         max_retries = MAX_RETRIES  # peut être étendu à BUSY_MAX_RETRIES au 1er 429
         while attempt <= max_retries:
             t0     = time.monotonic()
-            result = await self._call_provider(provider_name, provider, message, model)
+            result = await self._call_provider(provider_name, provider, message, model,
+                                               json_mode=json_mode)
             elapsed_ms = int((time.monotonic() - t0) * 1000)
 
             if result.error is None:
@@ -297,10 +304,11 @@ class LLMManager:
 
     async def _call_provider(
         self, name: str, provider: BaseProvider, message: str, model: str,
-        timeout: float | None = None,
+        timeout: float | None = None, json_mode: bool = False,
     ) -> LLMResponse:
         try:
-            response = await provider.generate(message, model, timeout=timeout)
+            response = await provider.generate(message, model, timeout=timeout,
+                                               json_mode=json_mode)
             return LLMResponse(model=model, provider=name, response=response, error=None)
         except Exception as exc:
             exc_type = type(exc).__name__
