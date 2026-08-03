@@ -46,7 +46,7 @@ class LLMResponse(BaseModel):
 class GenerateRequest(BaseModel):
     """Payload received at POST /llm/generate — the only external contract."""
 
-    task_type:        Literal["code", "reasoning", "chat", "agent"] = Field(default="chat")
+    task_type:        Literal["code", "reasoning", "chat", "agent", "memory"] = Field(default="chat")
     prompt:           str             = Field(..., min_length=1, max_length=PROMPT_MAX_LEN)
     context:          Dict[str, str]  = Field(default_factory=dict, max_length=CONTEXT_MAX_KEYS)
     model_preference: str             = Field(default="auto")
