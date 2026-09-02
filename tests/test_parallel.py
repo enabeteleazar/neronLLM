@@ -70,12 +70,15 @@ class RecoveringProvider(BaseProvider):
 
 
 def make_manager_with_slow_providers() -> LLMManager:
-    mgr = LLMManager()
-    mgr.providers = {
-        "fast": SlowProvider("fast", 0.2),
-        "medium": SlowProvider("medium", 0.3),
-        "slow": SlowProvider("slow", 0.4),
-    }
+    with patch("llm.core.manager.OllamaProvider"), \
+         patch("llm.core.manager.ClaudeProvider"), \
+         patch("llm.core.manager.LlamaCppProvider"):
+        mgr = LLMManager()
+        mgr.providers = {
+            "fast": SlowProvider("fast", 0.1),
+            "medium": SlowProvider("medium", 0.2),
+            "slow": SlowProvider("slow", 0.3),
+        }
     return mgr
 
 
@@ -103,10 +106,12 @@ def test_strategy_explicit_mode():
 
 def test_strategy_task_based():
     """Task determines mode when no explicit mode is set."""
-    engine = StrategyEngine()
-    assert engine.decide(task="code") == "parallel"
-    assert engine.decide(task="chat") == "race"
-    assert engine.decide(task="fast") == "single"
+    with patch("llm.core.strategy.get_tasks_config") as mock_cfg:
+        mock_cfg.return_value = {"code": {"mode": "parallel"}, "chat": {"mode": "race"}}
+        engine = StrategyEngine()
+        assert engine.decide(task="code") == "parallel"
+        assert engine.decide(task="chat") == "race"
+        assert engine.decide(task="fast") == "single"
 
 
 def test_strategy_default():
@@ -132,17 +137,19 @@ def test_router_select_model():
 
 def test_router_select_provider():
     """Explicit provider takes priority."""
-    router = LLMRouter()
-    assert router.select_provider("claude") == "claude"
-    assert router.select_provider() == "ollama"  # default
+    with patch("llm.core.router.get_providers_allowed", return_value=["ollama", "claude"]):
+        router = LLMRouter()
+        assert router.select_provider("claude") == "claude"
+        assert router.select_provider() == "ollama"  # default
 
 
 def test_router_fallback_chain():
     """Fallback provider chain works correctly."""
-    router = LLMRouter()
-    assert router.get_fallback_provider("ollama") == "claude"
-    assert router.get_fallback_provider("claude") is None
-    assert router.get_fallback_provider("unknown") is None
+    with patch("llm.core.router.get_providers_allowed", return_value=["ollama", "claude"]):
+        router = LLMRouter()
+        assert router.get_fallback_provider("ollama") == "claude"
+        assert router.get_fallback_provider("claude") is None
+        assert router.get_fallback_provider("unknown") is None
 
 
 # ---------------------------------------------------------------------------
@@ -526,7 +533,7 @@ def test_reload_closes_old_manager():
     import api.routes as routes_mod
     importlib.reload(routes_mod)
 
-    old_manager = routes_mod.manager
+    old_manager = app.state.manager
     old_manager.aclose = AsyncMock()
 
     from fastapi.testclient import TestClient
@@ -549,9 +556,9 @@ def test_reload_keeps_old_manager_on_failure():
     import api.routes as routes_mod
     importlib.reload(routes_mod)
 
-    original_manager = routes_mod.manager
+    original_manager = app.state.manager
 
-    with patch("api.routes.LLMManager", side_effect=RuntimeError("bad config")):
+    with patch("llm.api.routes.LLMManager", side_effect=RuntimeError("bad config")):
         from fastapi.testclient import TestClient
         from app import app
 
