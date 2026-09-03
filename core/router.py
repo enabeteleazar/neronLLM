@@ -20,12 +20,22 @@ IMPLEMENTED_PROVIDERS = {"ollama", "llama_cpp", "claude"}
 
 # Chaîne de repli sur le MODÈLE (pas le provider) en cas d'échec — inchangée,
 # ne traverse jamais de frontière de provider à elle seule.
+# Un repli doit aller vers du PLUS LEGER : si un modele n'a pas abouti, en
+# demander un plus gros ne peut pas aider.
+#
+# L'ancienne chaine — qwen2.5-coder:14b, deepseek-coder:6.7b, llama3.2:1b —
+# n'avait AUCUN de ses modeles installe, et partait du plus lourd (~9 Go).
+# Chaque echec declenchait donc : modele demande introuvable -> repli
+# introuvable -> le provider prenait « le premier disponible », soit
+# qwen3.5:4b (3,4 Go), plus lourd que le modele initial. Mesure du
+# 03/09/2026 : ces cascades transformaient un timeout en trois.
+#
+# Ces modeles sont installes (verifier avec `ollama list` avant de modifier).
 MODEL_FALLBACK_CHAIN: list[str] = [
-    "qwen2.5-coder:14b",
-    "deepseek-coder:6.7b",
-    "llama3.2:1b",
+    "qwen3:4b-instruct",
+    "qwen3:1.7b",
 ]
-FALLBACK_MODEL = "deepseek-coder:6.7b"
+FALLBACK_MODEL = "qwen3:1.7b"
 
 _DEFAULT_TASK: dict = {"providers": ["ollama"], "model": FALLBACK_MODEL, "mode": "single"}
 

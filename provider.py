@@ -5,8 +5,16 @@ from typing import Any
 
 import httpx
 
-from core.providers.models import ProviderRequest, ProviderResponse, ProviderStatus, ProviderType
-from core.providers.protocol import ProviderProtocol
+# Phase 2F : contrats lus dans le noyau partage, plus dans Core. Le Coeur
+# (LLM, Memory) implemente ces contrats ; il n a pas a dependre de Core pour
+# parler son propre langage.
+from server.common.providers import (
+    ProviderProtocol,
+    ProviderRequest,
+    ProviderResponse,
+    ProviderStatus,
+    ProviderType,
+)
 
 
 class LLMProvider(ProviderProtocol):

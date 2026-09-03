@@ -29,10 +29,15 @@ class OllamaProvider(BaseProvider):
     - option auto_pull désactivée par défaut
     """
 
+    # Replis quand le modele demande est absent. Aucun des trois precedents
+    # — tinyllama:latest, phi3:mini, Qwen2.5-Coder:latest — n'etait installe :
+    # le provider tombait alors sur « le premier modele disponible », c'est-a-dire
+    # un choix arbitraire qui s'est revele etre le plus lourd du parc.
+    # Ordonnes du plus leger au plus lourd. Surchargeable par `fallback_models`
+    # dans neron.yaml ; verifier avec `ollama list` avant de modifier.
     DEFAULT_FALLBACK_MODELS: list[str] = [
-        "tinyllama:latest",
-        "phi3:mini",
-        "Qwen2.5-Coder:latest",
+        "qwen3:1.7b",
+        "qwen3:4b-instruct",
     ]
 
     def __init__(self) -> None:
@@ -48,6 +53,25 @@ class OllamaProvider(BaseProvider):
         self._timeout_default: float = float(cfg.get("timeout", 300))
         self._timeout_race: float = float(cfg.get("race_timeout", 240))
         self._auto_pull: bool = str(cfg.get("auto_pull", "false")).lower() == "true"
+
+        # Raisonnement interne des modeles « thinking » (qwen3 et suivants).
+        # Ces modeles depensent d'abord des tokens en reflexion invisible avant
+        # d'ecrire la moindre reponse. Sur une machine sans GPU (~1 token/s
+        # mesure le 03/09/2026), le budget partait entierement en reflexion :
+        # 20 tokens generes, `response` VIDE. Avec think=false, le meme modele
+        # repond « Bonjour! » en 3 tokens. Ollama ignore l'option pour les
+        # modeles qui n'ont pas ce mode (verifie sur qwen2.5-coder).
+        # Configurable : le raisonnement garde sa valeur sur une machine
+        # capable de l'absorber.
+        self._think: bool = str(cfg.get("ollama_think", "false")).lower() == "true"
+
+        # Plafond de tokens generes. 0 = illimite (comportement historique).
+        # Sans plafond, le modele genere jusqu'a sa limite naturelle (2048+
+        # tokens) : a ~1 token/s sur une machine sans GPU, AUCUNE generation ne
+        # peut aboutir avant le timeout, et le service renvoie donc toujours un
+        # texte vide. Le plafond doit rester coherent avec `timeout` :
+        #     num_predict / debit_tokens_par_seconde  <  timeout
+        self._num_predict: int = int(cfg.get("ollama_num_predict", 0) or 0)
 
         raw_fallbacks = cfg.get("fallback_models", None)
         if isinstance(raw_fallbacks, list):
@@ -159,6 +183,10 @@ class OllamaProvider(BaseProvider):
             "prompt": message,
             "stream": False,
         }
+        if not self._think:
+            payload["think"] = False
+        if self._num_predict > 0:
+            payload["options"] = {"num_predict": self._num_predict}
         if json_mode:
             payload["format"] = "json"
 
